@@ -38,6 +38,17 @@ class User {
     }
   }
 
+  static async findByEmailWithPassword(email) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email },
+      });
+      return user;
+    } catch (error) {
+      throw new Error(`Error finding user by email: ${error.message}`);
+    }
+  }
+
   static async findAll() {
     try {
       const users = await prisma.user.findMany();
