@@ -44,6 +44,7 @@ export class Todo {
   static async findAll(filter) {
     try {
       const { take, skip, ...rest } = filter;
+      console.log(rest);
       var todos = await prisma.todo.findMany({
         take,
         skip,

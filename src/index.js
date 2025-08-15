@@ -1,3 +1,4 @@
+import cookieParser from "cookie-parser";
 import { configDotenv } from "dotenv";
 import express from "express";
 import session from "express-session";
@@ -5,6 +6,7 @@ import path, { dirname } from "path";
 import { fileURLToPath } from "url";
 import authRoutes from "./routes/authRoutes.js";
 import indexRoutes from "./routes/indexRoutes.js";
+import todoRoutes from "./routes/todoRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import webRoutes from "./routes/webRoutes.js";
 
@@ -19,6 +21,7 @@ const __dirname = dirname(__filename);
 app.use(express.json());
 // Parse HTML form posts
 app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
 
 app.use(
   session({
@@ -38,6 +41,7 @@ app.use("/", indexRoutes);
 app.use("/auth", webRoutes);
 app.use("/api/user", userRoutes);
 app.use("/api/auth", authRoutes);
+app.use("/api/todo", todoRoutes);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { TokenService } from "../services/tokenService.js";
 
 export class AuthController {
   static async register(req, res) {
@@ -16,13 +17,27 @@ export class AuthController {
         return res.status(409).json({ error: "User already exists" });
       }
       const user = await User.create({ email, password, name });
-      const token = this.#generateToken(user);
+      const createdToken = await TokenService.createRefreshToken(user);
 
-      req.session.user = this.#generateSession(user);
+      req.session.user = AuthController.#generateSession(user);
 
-      res.cookie("auth_token", token, this.#cookieOptions());
+      res.cookie(
+        "auth_token",
+        createdToken.token,
+        AuthController.#cookieOptions()
+      );
+      res.cookie(
+        "refresh_token",
+        createdToken.refreshToken,
+        AuthController.#cookieOptions()
+      );
 
-      res.status(201).json({ user, token });
+      const userWithoutPassword = { ...user, password: undefined };
+      res.status(200).json({
+        user: userWithoutPassword,
+        token: createdToken.token,
+        refreshToken: createdToken.refreshToken,
+      });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -38,18 +53,29 @@ export class AuthController {
           .json({ error: "Email and password are required" });
       }
 
-      const user = await User.findByEmail(email);
+      const user = await User.findByEmailWithPassword(email);
       if (!user || !(await User.verifyPassword(user, password))) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      const token = this.#generateToken(user);
+      const createdToken = await TokenService.createRefreshToken(user);
 
-      req.session.user = this.#generateSession(user);
+      req.session.user = AuthController.#generateSession(user);
 
-      res.cookie("auth_token", token, this.#cookieOptions());
+      res.cookie(
+        "auth_token",
+        createdToken.token,
+        AuthController.#cookieOptions()
+      );
+      res.cookie(
+        "refresh_token",
+        createdToken.refreshToken,
+        AuthController.#cookieOptions()
+      );
 
-      res.json({ user, token });
+      res.json({
+        token: createdToken.token,
+      });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -58,7 +84,14 @@ export class AuthController {
   static async logout(req, res) {
     try {
       req.session.destroy();
+      const token = req.cookies.auth_token;
+      const refreshToken = req.cookies.refresh_token;
+
+      await TokenService.revokeRefreshToken(refreshToken);
+      await TokenService.addTokenToBlacklist(token);
+
       res.clearCookie("auth_token");
+      res.clearCookie("refresh_token");
       res.status(200).json({ message: "Logged out successfully" });
     } catch (error) {
       res.status(500).json({ error: error.message });
@@ -67,7 +100,7 @@ export class AuthController {
 
   static async getCurrentUser(req, res) {
     try {
-      const token = this.#getTokenFromHeader(req);
+      const token = AuthController.#getTokenFromHeader(req);
       if (!token) {
         if (req.session?.user) {
           const user = await User.findById(req.session.user.id);
@@ -78,7 +111,7 @@ export class AuthController {
         return res.status(401).json({ error: "Not authorized" });
       }
 
-      const decoded = this.#decodeToken(token);
+      const decoded = AuthController.#decodeToken(token);
       const user = await User.findById(decoded.userId);
       if (!user) {
         return res.status(401).json({ error: "Not authorized" });
@@ -92,19 +125,22 @@ export class AuthController {
 
   static async refreshToken(req, res) {
     try {
-      const token = this.#getTokenFromHeader(req);
-      if (!token) {
-        return res.status(401).json({ error: "No token provided" });
+      const refreshToken = req.cookies.refresh_token;
+      const existRefreshToken = await TokenService.findByRefreshToken(
+        refreshToken
+      );
+      if (!existRefreshToken || existRefreshToken.status === false) {
+        return res.status(401).json({ error: "Invalid refresh token" });
       }
 
-      const decoded = this.#decodeToken(token);
-      const user = await User.findById(decoded.userId);
+      const user = await User.findById(existRefreshToken.userId);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
-      const newToken = this.#generateToken(user);
-      res.cookie("auth_token", newToken, this.#cookieOptions());
-      res.json({ user, token: newToken });
+
+      const newToken = await TokenService.createToken(user);
+      res.cookie("auth_token", newToken, AuthController.#cookieOptions());
+      res.json({ token: newToken });
     } catch (error) {
       res.status(500).json({ error: error.message });
     }
@@ -118,17 +154,6 @@ export class AuthController {
   static #decodeToken(token) {
     const secret = process.env.JWT_SECRET || "secret";
     return jwt.verify(token, secret);
-  }
-
-  static #generateToken(user) {
-    const jwtPayload = {
-      userId: user.id,
-      email: user.email,
-      name: user.name,
-    };
-
-    const secret = process.env.JWT_SECRET || "secret";
-    return jwt.sign(jwtPayload, secret, { expiresIn: "1h" });
   }
 
   static #generateSession(user) {

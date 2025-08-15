@@ -14,11 +14,12 @@ datasource db {
 }
 
 model User {
-  id       String @id @default(auto()) @map("_id") @db.ObjectId
-  email    String @unique
+  id       String  @id @default(auto()) @map("_id") @db.ObjectId
+  email    String  @unique
   name     String
   password String
   todos    Todo[]
+  tokens   Token[]
 }
 
 model Todo {
@@ -31,4 +32,16 @@ model Todo {
   to        DateTime
   author    User     @relation(fields: [authorId], references: [id])
   authorId  String   @db.ObjectId
+}
+
+model Token {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  token        String   @unique
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  refreshToken String?
+  type         String
+  status       Boolean
+  user         User     @relation(fields: [userId], references: [id])
 }

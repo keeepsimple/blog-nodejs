@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import { TokenService } from "../services/tokenService.js";
 
 export const authenticateToken = async (req, res, next) => {
   try {
@@ -7,24 +8,30 @@ export const authenticateToken = async (req, res, next) => {
     const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
-      res.redirect("/auth/login");
-      return;
+      return res.status(401).json({ error: "Token not provided" });
     }
 
+    // check if token is blacklist
+    var isBlacklisted = await TokenService.checkIfBlacklisted(token);
+    if (isBlacklisted) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Verify the token
     const jwtSecret = process.env.JWT_SECRET || "your-secret-key";
     const decoded = jwt.verify(token, jwtSecret);
 
     const user = await User.findById(decoded.userId);
 
     if (!user) {
-      res.redirect("/auth/login");
-      return;
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
     req.user = user;
     next();
   } catch (error) {
-    res.redirect("/auth/login");
+    console.error("Authentication error:", error);
+    res.status(401).json({ error: "Unauthorized" });
   }
 };
 
